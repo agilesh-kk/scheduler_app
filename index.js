@@ -55,34 +55,38 @@ async function runScheduler() {
       const convoRef = doc.ref.parent.parent;
       if (!convoRef) continue;
 
+      // 🔥 Fetch conversation data
+      const convoSnap = await convoRef.get();
+      const convoData = convoSnap.data();
+
+      const participants = convoData.participantsId;
+      const senderId = data.senderId;
+
+      const receiverId = participants.find(id => id !== senderId);
+
       const messageRef = convoRef.collection("messages").doc(doc.id);
 
-      const receiverId = data.receiverId;
-
-      // ✅ Move message to "messages"
       batch.set(messageRef, {
         ...data,
         status: "sent",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // ❌ Remove scheduled message
       batch.delete(doc.ref);
 
-      // 🔥 Update conversation safely
       batch.set(
         convoRef,
         {
           lastMessage: data.content,
           lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
 
-          // 🔔 Correct unread increment
+          // 🔥 Correct unread increment
           [`${receiverId}.unread`]: admin.firestore.FieldValue.increment(1),
         },
         { merge: true }
       );
 
-      console.log("✅ Sent message:", doc.id, "→", receiverId);
+      console.log("✅ Sent:", doc.id, "→", receiverId);
     }
 
     await batch.commit();
