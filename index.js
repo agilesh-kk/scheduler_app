@@ -74,17 +74,12 @@ async function runScheduler() {
 
       batch.delete(doc.ref);
 
-      batch.set(
-        convoRef,
-        {
-          lastMessage: data.content,
-          lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
-
-          // 🔥 Correct unread increment
-          [`${receiverId}.unread`]: admin.firestore.FieldValue.increment(1),
-        },
-        { merge: true }
-      );
+      // 🔥 Use update instead of set for nested increment
+      batch.update(convoRef, {
+        lastMessage: data.content,
+        lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
+        [`${receiverId}.unread`]: admin.firestore.FieldValue.increment(1),
+      });
 
       console.log("✅ Sent:", doc.id, "→", receiverId);
     }
