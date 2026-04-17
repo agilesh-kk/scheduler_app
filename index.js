@@ -85,33 +85,27 @@ async function runScheduler() {
 
       const messageRef = convoRef.collection("messages").doc(doc.id);
 
-      // ✅ Move message
+      // ✅ Move message to messages collection
       batch.set(messageRef, {
         ...data,
         status: "sent",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // ❌ Delete scheduled
+      // ❌ Delete scheduled message
       batch.delete(doc.ref);
 
-      // 🔥 CORRECT UNREAD UPDATE (NO DOT NOTATION)
-      const receiverData = convoData[receiverId];
-      const senderData = convoData[senderId];
-
+      // 🔥 FINAL FIX: ATOMIC UNREAD UPDATE
       batch.update(convoRef, {
         lastMessage: data.content,
         lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
 
-        [receiverId]: {
-          ...receiverData,
-          unread: (receiverData.unread || 0) + 1,
-        },
+        // 🔔 Correct increment (NO stale data issue)
+        [`${receiverId}.unread`]:
+          admin.firestore.FieldValue.increment(1),
 
-        [senderId]: {
-          ...senderData,
-          unread: 0,
-        },
+        // ✅ Reset sender unread
+        [`${senderId}.unread`]: 0,
       });
 
       console.log("✅ Sent:", doc.id, "→", receiverId);
