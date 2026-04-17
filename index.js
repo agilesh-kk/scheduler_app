@@ -55,34 +55,58 @@ async function runScheduler() {
       const convoRef = doc.ref.parent.parent;
       if (!convoRef) continue;
 
-      // 🔥 Fetch conversation data
+      // 🔥 Get conversation data
       const convoSnap = await convoRef.get();
       const convoData = convoSnap.data();
 
       const participants = convoData.participantsId;
       const senderId = data.senderId;
 
-      const receiverId = participants.find(id => id !== senderId);
+      // 🔥 SAFE receiver detection
+      let receiverId = null;
+
+      for (const id of participants) {
+        if (id !== senderId) {
+          receiverId = id;
+          break;
+        }
+      }
+
+      // 🚨 SAFETY CHECKS
+      if (!receiverId) {
+        console.log("❌ ERROR: receiverId not found");
+        console.log("participants:", participants);
+        console.log("senderId:", senderId);
+        continue;
+      }
+
+      if (!convoData[receiverId]) {
+        console.log("❌ ERROR: receiver field missing in convo:", receiverId);
+        continue;
+      }
 
       const messageRef = convoRef.collection("messages").doc(doc.id);
 
+      // ✅ Move message to "messages"
       batch.set(messageRef, {
         ...data,
         status: "sent",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
+      // ❌ Delete scheduled message
       batch.delete(doc.ref);
 
-      // 🔥 Use update instead of set for nested increment
+      // 🔥 Correct update
       batch.update(convoRef, {
         lastMessage: data.content,
         lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
 
-        // 🔔 Receiver gets unread increment
-        [`${receiverId}.unread`]: admin.firestore.FieldValue.increment(1),
+        // 🔔 increment receiver unread
+        [`${receiverId}.unread`]:
+          admin.firestore.FieldValue.increment(1),
 
-        // ✅ Sender unread reset (IMPORTANT)
+        // ✅ reset sender unread
         [`${senderId}.unread`]: 0,
       });
 
@@ -107,11 +131,11 @@ function startScheduler() {
   console.log("⏳ Aligning scheduler in", delay, "ms");
 
   setTimeout(() => {
-    runScheduler(); // first exact run
+    runScheduler(); // first run aligned
 
-    setInterval(runScheduler, 60000); // every exact minute
+    setInterval(runScheduler, 60000); // every minute aligned
   }, delay);
 }
 
-// 🚀 Start aligned scheduler
+// 🚀 Start scheduler
 startScheduler();
