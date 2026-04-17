@@ -61,6 +61,10 @@ setInterval(async () => {
       if (!convoRef) continue;
 
       const messageRef = convoRef.collection("messages").doc(doc.id);
+      
+      // 🎯 Get sender and receiver IDs
+      const senderId = data.senderId;
+      const receiverId = data.receiverId;
 
       // ✅ Move to messages
       batch.set(messageRef, {
@@ -72,17 +76,22 @@ setInterval(async () => {
       // ❌ Remove from scheduled
       batch.delete(doc.ref);
 
-      // 🔥 Update conversation preview
+      // 🔥 Update conversation preview AND mark receiver as unread
       batch.set(
         convoRef,
         {
           lastMessage: data.content,
           lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
+          // 🔔 IMPORTANT: Mark receiver as not seen (shows notification badge)
+          [receiverId]: {
+            lastSeen: false,
+            lastSeenTime: admin.firestore.FieldValue.serverTimestamp(),
+          }
         },
         { merge: true }
       );
 
-      console.log("✅ Sent message:", doc.id);
+      console.log("✅ Sent message:", doc.id, "to:", receiverId);
     }
 
     // 🚀 Commit once for all messages
