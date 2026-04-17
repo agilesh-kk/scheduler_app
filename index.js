@@ -78,7 +78,12 @@ async function runScheduler() {
       batch.update(convoRef, {
         lastMessage: data.content,
         lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
+
+        // 🔔 Receiver gets unread increment
         [`${receiverId}.unread`]: admin.firestore.FieldValue.increment(1),
+
+        // ✅ Sender unread reset (IMPORTANT)
+        [`${senderId}.unread`]: 0,
       });
 
       console.log("✅ Sent:", doc.id, "→", receiverId);
