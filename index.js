@@ -1,7 +1,7 @@
 const admin = require("firebase-admin");
 const express = require("express");
 
-// 🔐 Load Firebase key from ENV
+// 🔐 Firebase init
 const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
 admin.initializeApp({
@@ -10,7 +10,7 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
-// 🌐 Express server (prevents Render timeout)
+// 🌐 Express (Render keep-alive)
 const app = express();
 
 app.get("/", (req, res) => {
@@ -23,10 +23,9 @@ app.listen(PORT, () => {
   console.log(`🌐 Server running on port ${PORT}`);
 });
 
-// 🚀 Scheduler start
 console.log("🚀 Scheduler starting...");
 
-// 🔥 FUNCTION: run scheduler
+// 🔥 MAIN SCHEDULER FUNCTION
 async function runScheduler() {
   try {
     const now = admin.firestore.Timestamp.now();
@@ -55,14 +54,15 @@ async function runScheduler() {
       const convoRef = doc.ref.parent.parent;
       if (!convoRef) continue;
 
-      // 🔥 Get conversation data
       const convoSnap = await convoRef.get();
       const convoData = convoSnap.data();
+
+      if (!convoData || !convoData.participantsId) continue;
 
       const participants = convoData.participantsId;
       const senderId = data.senderId;
 
-      // 🔥 SAFE receiver detection
+      // 🔥 SAFE RECEIVER DETECTION
       let receiverId = null;
 
       for (const id of participants) {
@@ -74,54 +74,58 @@ async function runScheduler() {
 
       // 🚨 SAFETY CHECKS
       if (!receiverId) {
-        console.log("❌ ERROR: receiverId not found");
-        console.log("participants:", participants);
-        console.log("senderId:", senderId);
+        console.log("❌ receiverId not found");
         continue;
       }
 
-      if (!convoData[receiverId]) {
-        console.log("❌ ERROR: receiver field missing in convo:", receiverId);
+      if (!convoData[receiverId] || !convoData[senderId]) {
+        console.log("❌ participant data missing");
         continue;
       }
 
       const messageRef = convoRef.collection("messages").doc(doc.id);
 
-      // ✅ Move message to "messages"
+      // ✅ Move message
       batch.set(messageRef, {
         ...data,
         status: "sent",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // ❌ Delete scheduled message
+      // ❌ Delete scheduled
       batch.delete(doc.ref);
 
-      // 🔥 Correct update
+      // 🔥 CORRECT UNREAD UPDATE (NO DOT NOTATION)
+      const receiverData = convoData[receiverId];
+      const senderData = convoData[senderId];
+
       batch.update(convoRef, {
         lastMessage: data.content,
         lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
 
-        // 🔔 increment receiver unread
-        [`${receiverId}.unread`]:
-          admin.firestore.FieldValue.increment(1),
+        [receiverId]: {
+          ...receiverData,
+          unread: (receiverData.unread || 0) + 1,
+        },
 
-        // ✅ reset sender unread
-        [`${senderId}.unread`]: 0,
+        [senderId]: {
+          ...senderData,
+          unread: 0,
+        },
       });
 
       console.log("✅ Sent:", doc.id, "→", receiverId);
     }
 
     await batch.commit();
-
     console.log("🎉 Batch committed successfully");
+
   } catch (e) {
     console.error("❌ Scheduler Error:", e);
   }
 }
 
-// 🔥 FUNCTION: align to exact minute
+// 🔥 ALIGN TO EXACT MINUTE
 function startScheduler() {
   const now = new Date();
 
@@ -131,11 +135,10 @@ function startScheduler() {
   console.log("⏳ Aligning scheduler in", delay, "ms");
 
   setTimeout(() => {
-    runScheduler(); // first run aligned
-
-    setInterval(runScheduler, 60000); // every minute aligned
+    runScheduler();
+    setInterval(runScheduler, 60000);
   }, delay);
 }
 
-// 🚀 Start scheduler
+// 🚀 START
 startScheduler();
