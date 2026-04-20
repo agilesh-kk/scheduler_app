@@ -49,7 +49,14 @@ async function runScheduler() {
     for (const doc of snapshot.docs) {
       const data = doc.data();
 
+      // ✅ Extra safety
       if (data.status !== "scheduled") continue;
+
+      // ❌ Skip if user deleted before sending
+      if (data.deletedfor && data.deletedfor.includes(data.senderId)) {
+        console.log("⛔ Skipping deleted scheduled message:", doc.id);
+        continue;
+      }
 
       const convoRef = doc.ref.parent.parent;
       if (!convoRef) continue;
@@ -62,49 +69,47 @@ async function runScheduler() {
       const participants = convoData.participantsId;
       const senderId = data.senderId;
 
-      // 🔥 SAFE RECEIVER DETECTION
-      let receiverId = null;
+      // ✅ Cleaner receiver detection
+      const receiverId = participants.find(id => id !== senderId);
 
-      for (const id of participants) {
-        if (id !== senderId) {
-          receiverId = id;
-          break;
-        }
-      }
-
-      // 🚨 SAFETY CHECKS
       if (!receiverId) {
-        console.log("❌ receiverId not found");
+        console.log("❌ receiverId not found for:", doc.id);
         continue;
       }
 
       if (!convoData[receiverId] || !convoData[senderId]) {
-        console.log("❌ participant data missing");
+        console.log("❌ participant data missing for:", doc.id);
         continue;
       }
 
       const messageRef = convoRef.collection("messages").doc(doc.id);
 
-      // ✅ Move message to messages collection
+      // ✅ Move message → messages collection
       batch.set(messageRef, {
         ...data,
         status: "sent",
+        isScheduled: false, // 🔥 FIX
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // ❌ Delete scheduled message
+      // ❌ Delete from scheduled_messages
       batch.delete(doc.ref);
 
-      // 🔥 FINAL FIX: ATOMIC UNREAD UPDATE
+      // ✅ Update conversation (WhatsApp-like)
       batch.update(convoRef, {
-        lastMessage: data.content,
-        lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
+        lastMessage:
+          data.type === "text" ? data.content : "📷Image",
 
-        // 🔔 Correct increment (NO stale data issue)
+        lastMessageId: doc.id, // 🔥 IMPORTANT
+        lastSender: senderId,  // 🔥 IMPORTANT
+
+        lastupdateTime:
+          admin.firestore.FieldValue.serverTimestamp(),
+
+        // 🔔 Unread updates
         [`${receiverId}.unread`]:
           admin.firestore.FieldValue.increment(1),
 
-        // ✅ Reset sender unread
         [`${senderId}.unread`]: 0,
       });
 
