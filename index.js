@@ -107,6 +107,8 @@ async function runScheduler() {
       // ✅ PER-USER CONVERSATION UPDATE
       // =====================================================
       batch.update(convoRef, {
+        // 🔥 ROOT (for sorting)
+        lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
         // 🔵 Sender view
         [`${senderId}.lastMessage`]: content,
         [`${senderId}.lastMessageId`]: doc.id,
