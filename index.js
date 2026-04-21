@@ -49,10 +49,10 @@ async function runScheduler() {
     for (const doc of snapshot.docs) {
       const data = doc.data();
 
-      // ✅ Extra safety
+      // ✅ Safety
       if (data.status !== "scheduled") continue;
 
-      // ❌ Skip if user deleted before sending
+      // ❌ Skip if sender deleted it before sending
       if (data.deletedfor && data.deletedfor.includes(data.senderId)) {
         console.log("⛔ Skipping deleted scheduled message:", doc.id);
         continue;
@@ -69,48 +69,58 @@ async function runScheduler() {
       const participants = convoData.participantsId;
       const senderId = data.senderId;
 
-      // ✅ Cleaner receiver detection
       const receiverId = participants.find(id => id !== senderId);
 
       if (!receiverId) {
-        console.log("❌ receiverId not found for:", doc.id);
+        console.log("❌ receiverId not found:", doc.id);
         continue;
       }
 
-      if (!convoData[receiverId] || !convoData[senderId]) {
-        console.log("❌ participant data missing for:", doc.id);
+      if (!convoData[senderId] || !convoData[receiverId]) {
+        console.log("❌ user data missing in convo:", doc.id);
         continue;
       }
 
-      const messageRef = convoRef.collection("messages").doc(doc.id);
+      const messageRef =
+        convoRef.collection("messages").doc(doc.id);
 
-      // ✅ Move message → messages collection
+      // =====================================================
+      // ✅ MOVE MESSAGE → messages collection
+      // =====================================================
       batch.set(messageRef, {
         ...data,
         status: "sent",
-        isScheduled: false, // 🔥 FIX
+        isScheduled: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // ❌ Delete from scheduled_messages
+      // ❌ DELETE scheduled message
       batch.delete(doc.ref);
 
-      // ✅ Update conversation (WhatsApp-like)
+      const content =
+        data.type === "text" ? data.content : "📷Image";
+
+      const serverTime =
+        admin.firestore.FieldValue.serverTimestamp();
+
+      // =====================================================
+      // ✅ PER-USER CONVERSATION UPDATE
+      // =====================================================
       batch.update(convoRef, {
-        lastMessage:
-          data.type === "text" ? data.content : "📷Image",
+        // 🔵 Sender view
+        [`${senderId}.lastMessage`]: content,
+        [`${senderId}.lastMessageId`]: doc.id,
+        [`${senderId}.lastSender`]: senderId,
+        [`${senderId}.lastupdateTime`]: serverTime,
+        [`${senderId}.unread`]: 0,
 
-        lastMessageId: doc.id, // 🔥 IMPORTANT
-        lastSender: senderId,  // 🔥 IMPORTANT
-
-        lastupdateTime:
-          admin.firestore.FieldValue.serverTimestamp(),
-
-        // 🔔 Unread updates
+        // 🔴 Receiver view
+        [`${receiverId}.lastMessage`]: content,
+        [`${receiverId}.lastMessageId`]: doc.id,
+        [`${receiverId}.lastSender`]: senderId,
+        [`${receiverId}.lastupdateTime`]: serverTime,
         [`${receiverId}.unread`]:
           admin.firestore.FieldValue.increment(1),
-
-        [`${senderId}.unread`]: 0,
       });
 
       console.log("✅ Sent:", doc.id, "→", receiverId);
