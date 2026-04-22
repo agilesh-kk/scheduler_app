@@ -47,20 +47,35 @@ async function runScheduler() {
     const batch = db.batch();
 
     for (const doc of snapshot.docs) {
+
       const data = doc.data();
 
-      // ✅ Safety
       if (data.status !== "scheduled") continue;
-
-      // ❌ Skip if sender deleted it before sending
-      if (data.deletedfor && data.deletedfor.includes(data.senderId)) {
-        console.log("⛔ Skipping deleted scheduled message:", doc.id);
-        continue;
-      }
 
       const convoRef = doc.ref.parent.parent;
       if (!convoRef) continue;
 
+      // =====================================================
+      // 🔴 1. DELETE FOR EVERYONE (HARD DELETE)
+      // =====================================================
+      if (data.deletedForEveryone === true) {
+        batch.delete(doc.ref); // ❌ remove completely
+        console.log("🗑 Deleted scheduled (everyone):", doc.id);
+        continue;
+      }
+
+      // =====================================================
+      // 🔵 2. DELETE FOR ME (SENDER ONLY)
+      // =====================================================
+      // if (data.deletedfor && data.deletedfor.includes(data.senderId)) {
+      //   batch.delete(doc.ref); // ❌ sender removed → don't send
+      //   console.log("👤 Deleted scheduled (for me):", doc.id);
+      //   continue;
+      // }
+
+      // =====================================================
+      // ✅ 3. NORMAL SEND FLOW
+      // =====================================================
       const convoSnap = await convoRef.get();
       const convoData = convoSnap.data();
 
@@ -68,33 +83,27 @@ async function runScheduler() {
 
       const participants = convoData.participantsId;
       const senderId = data.senderId;
-
       const receiverId = participants.find(id => id !== senderId);
 
-      if (!receiverId) {
-        console.log("❌ receiverId not found:", doc.id);
-        continue;
-      }
+      if (!receiverId) continue;
 
-      if (!convoData[senderId] || !convoData[receiverId]) {
-        console.log("❌ user data missing in convo:", doc.id);
-        continue;
-      }
+      const messageRef = convoRef.collection("messages").doc(doc.id);
 
-      const messageRef =
-        convoRef.collection("messages").doc(doc.id);
-
-      // =====================================================
-      // ✅ MOVE MESSAGE → messages collection
-      // =====================================================
+      // 🔥 Move to messages
       batch.set(messageRef, {
-        ...data,
+        senderId: data.senderId,
+        content: data.content,
+        type: data.type || "text",
         status: "sent",
         isScheduled: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+
+        // 🔥 IMPORTANT (DO NOT REMOVE)
+        deletedfor: data.deletedfor || [],
+        deletedForEveryone: data.deletedForEveryone || false,
       });
 
-      // ❌ DELETE scheduled message
+      // ❌ Remove scheduled
       batch.delete(doc.ref);
 
       const content =
@@ -103,20 +112,18 @@ async function runScheduler() {
       const serverTime =
         admin.firestore.FieldValue.serverTimestamp();
 
-      // =====================================================
-      // ✅ PER-USER CONVERSATION UPDATE
-      // =====================================================
+      // 🔥 Conversation update
       batch.update(convoRef, {
-        // 🔥 ROOT (for sorting)
-        lastupdateTime: admin.firestore.FieldValue.serverTimestamp(),
-        // 🔵 Sender view
+        lastupdateTime: serverTime,
+
+        // 🔵 Sender
         [`${senderId}.lastMessage`]: content,
         [`${senderId}.lastMessageId`]: doc.id,
         [`${senderId}.lastSender`]: senderId,
         [`${senderId}.lastupdateTime`]: serverTime,
         [`${senderId}.unread`]: 0,
 
-        // 🔴 Receiver view
+        // 🔴 Receiver
         [`${receiverId}.lastMessage`]: content,
         [`${receiverId}.lastMessageId`]: doc.id,
         [`${receiverId}.lastSender`]: senderId,
@@ -125,7 +132,7 @@ async function runScheduler() {
           admin.firestore.FieldValue.increment(1),
       });
 
-      console.log("✅ Sent:", doc.id, "→", receiverId);
+      console.log("✅ Sent:", doc.id);
     }
 
     await batch.commit();
