@@ -112,15 +112,22 @@ async function runScheduler() {
       const serverTime =
         admin.firestore.FieldValue.serverTimestamp();
 
+      const isDeletedForSender =
+        data.deletedfor && data.deletedfor.includes(senderId);
       // 🔥 Conversation update
       batch.update(convoRef, {
         lastupdateTime: serverTime,
 
-        // 🔵 Sender
-        [`${senderId}.lastMessage`]: content,
-        [`${senderId}.lastMessageId`]: doc.id,
-        [`${senderId}.lastSender`]: senderId,
-        [`${senderId}.lastupdateTime`]: serverTime,
+        // 🔵 Sender (ONLY if visible)
+        ...(isDeletedForSender
+          ? {} // ❌ don't update sender view
+          : {
+              [`${senderId}.lastMessage`]: content,
+              [`${senderId}.lastMessageId`]: doc.id,
+              [`${senderId}.lastSender`]: senderId,
+              [`${senderId}.lastupdateTime`]: serverTime,
+            }),
+
         [`${senderId}.unread`]: 0,
 
         // 🔴 Receiver
