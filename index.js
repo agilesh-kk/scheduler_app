@@ -192,6 +192,8 @@ async function processTimelineEvent(message) {
     .where("enabled", "==", true)
     .get();
 
+  let created = false;
+
   await db.runTransaction(async (transaction) => {
 
     // 🔥 PHASE 1: READ + CALCULATE COUNTS
@@ -281,6 +283,8 @@ async function processTimelineEvent(message) {
       const timelineRef = convoRef
         .collection("timeline")
         .doc(eventId);
+      
+      created = true;
 
       transaction.set(timelineRef, {
         id: eventId,
@@ -292,6 +296,15 @@ async function processTimelineEvent(message) {
       });
     }
   });
+  if (created) {
+    await db.collection("Conversations")
+      .doc(convoId)
+      .collection("messages")
+      .doc(messageId)
+      .set({
+        inTimeline: true
+      },{merge:true});
+  }
 }
 
 // 🚀 START
