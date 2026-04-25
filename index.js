@@ -45,6 +45,7 @@ async function runScheduler() {
     console.log(`📦 Found ${snapshot.size} messages`);
 
     const batch = db.batch();
+    const timelineQueue = [];
 
     for (const doc of snapshot.docs) {
 
@@ -139,11 +140,26 @@ async function runScheduler() {
           admin.firestore.FieldValue.increment(1),
       });
 
+      timelineQueue.push({
+        messageId: doc.id,
+        senderId,
+        receiverId,
+        type: data.type || "text",
+        content: data.content,
+      });
+
       console.log("✅ Sent:", doc.id);
     }
 
     await batch.commit();
     console.log("🎉 Batch committed successfully");
+
+    // 🔥 PROCESS TIMELINE AFTER COMMIT
+    await Promise.all(
+      timelineQueue.map((msg) => processTimelineEvent(msg))
+    );
+
+    console.log("📌 Timeline updated");
 
   } catch (e) {
     console.error("❌ Scheduler Error:", e);
@@ -163,6 +179,119 @@ function startScheduler() {
     runScheduler();
     setInterval(runScheduler, 60000);
   }, delay);
+}
+
+async function processTimelineEvent(message) {
+  const { messageId, senderId, receiverId, type, content } = message;
+
+  const convoId = [senderId, receiverId].sort().join("_");
+  const convoRef = db.collection("Conversations").doc(convoId);
+
+  const rulesSnapshot = await db
+    .collection("timeline_rules")
+    .where("enabled", "==", true)
+    .get();
+
+  await db.runTransaction(async (transaction) => {
+
+    // 🔥 PHASE 1: READ + CALCULATE COUNTS
+    const counts = {};
+
+    for (const ruleDoc of rulesSnapshot.docs) {
+      const rule = ruleDoc.data();
+      const ruleId = ruleDoc.id;
+      const conditions = rule.conditions || {};
+
+      const counterRef = convoRef
+        .collection("rule_counters")
+        .doc(ruleId);
+
+      const counterSnap = await transaction.get(counterRef);
+
+      let count = 0;
+      if (counterSnap.exists) {
+        count = counterSnap.data().count || 0;
+      }
+
+      let matches = true;
+
+      // ✅ messageType filter BEFORE increment
+      if (conditions.messageType) {
+        if (type !== conditions.messageType) {
+          matches = false;
+        }
+      }
+
+      // ✅ increment ONLY if matches
+      if (matches) {
+        count++;
+      }
+
+      counts[ruleId] = count;
+    }
+
+    // 🔥 PHASE 2: APPLY RULES + WRITE
+    for (const ruleDoc of rulesSnapshot.docs) {
+      const rule = ruleDoc.data();
+      const ruleId = ruleDoc.id;
+      const conditions = rule.conditions || {};
+
+      const count = counts[ruleId];
+
+      let shouldCreate = true;
+
+      // 🔹 messageType filter
+      if (conditions.messageType) {
+        if (type !== conditions.messageType) {
+          shouldCreate = false;
+        }
+      }
+
+      // 🔹 interval
+      if (conditions.interval) {
+        if (count % conditions.interval !== 0) {
+          shouldCreate = false;
+        }
+      }
+
+      // 🔹 occurrence
+      if (conditions.occurrence) {
+        if (count !== conditions.occurrence) {
+          shouldCreate = false;
+        }
+      }
+
+      const counterRef = convoRef
+        .collection("rule_counters")
+        .doc(ruleId);
+
+      // ✅ SAFE WRITE (after all reads)
+      transaction.set(counterRef, { count });
+
+      if (!shouldCreate) continue;
+
+      let title = rule.title || "";
+      let eventContent = rule.content || content;
+
+      title = title.replace("{index}", count);
+      eventContent = eventContent.replace("{index}", count);
+
+      const eventId = `${messageId}_${ruleId}`;
+
+      const timelineRef = convoRef
+        .collection("timeline")
+        .doc(eventId);
+
+      transaction.set(timelineRef, {
+        id: eventId,
+        title,
+        content: eventContent,
+        type,
+        time: admin.firestore.FieldValue.serverTimestamp(),
+        index: count,
+      });
+    }
+  });
 }
 
 // 🚀 START
