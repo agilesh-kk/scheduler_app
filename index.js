@@ -210,9 +210,9 @@ async function processTimelineEvent(message) {
     // 🔥 SIMPLE MILESTONES
     const milestones = [50, 100, 500, 1000, 2000, 5000];
 
-    if (!milestones.includes(messageCount)) return;
+    if (!milestones.includes(totalMessages)) return;
 
-    const eventId = `${convoId}_${messageCount}`;
+    const eventId = `${convoId}_${totalMessages}`;
 
     const timelineRef = convoRef.collection("timeline").doc(eventId);
 
@@ -221,11 +221,11 @@ async function processTimelineEvent(message) {
     transaction.set(timelineRef, {
       id: eventId,
       title: "Milestone 🎯",
-      content: `Reached ${messageCount} messages`,
+      content: `Reached ${totalMessages} messages`,
       type,
       time: admin.firestore.FieldValue.serverTimestamp(),
-      index: messageCount,
-      messageId,
+      index: totalMessages,
+      messageId: messageId,
     });
   });
 
