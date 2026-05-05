@@ -195,16 +195,16 @@ async function processTimelineEvent(message) {
   await db.runTransaction(async (transaction) => {
     const statsSnap = await transaction.get(statsRef);
 
-    let messageCount = 0;
+    let totalMessages = 0;
 
     if (statsSnap.exists) {
-      messageCount = statsSnap.data().totalMessages || 0;
+      totalMessages = statsSnap.data().totalMessages || 0;
     }
 
-    messageCount += 1;
+    totalMessages += 1;
 
     transaction.set(statsRef, {
-      messageCount
+      totalMessages
     }, { merge: true });
 
     // 🔥 SIMPLE MILESTONES
