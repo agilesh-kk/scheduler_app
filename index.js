@@ -97,6 +97,7 @@ async function runScheduler() {
         type: data.type || "text",
         status: "sent",
         isScheduled: false,
+        isFromScheduler: true,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
 
         // 🔥 IMPORTANT (DO NOT REMOVE)
@@ -187,123 +188,53 @@ async function processTimelineEvent(message) {
   const convoId = [senderId, receiverId].sort().join("_");
   const convoRef = db.collection("Conversations").doc(convoId);
 
-  const rulesSnapshot = await db
-    .collection("timeline_rules")
-    .where("enabled", "==", true)
-    .get();
+  const statsRef = convoRef.collection("meta").doc("stats");
 
   let created = false;
 
   await db.runTransaction(async (transaction) => {
+    const statsSnap = await transaction.get(statsRef);
 
-    // 🔥 PHASE 1: READ + CALCULATE COUNTS
-    const counts = {};
+    let messageCount = 0;
 
-    for (const ruleDoc of rulesSnapshot.docs) {
-      const rule = ruleDoc.data();
-      const ruleId = ruleDoc.id;
-      const conditions = rule.conditions || {};
-
-      const counterRef = convoRef
-        .collection("rule_counters")
-        .doc(ruleId);
-
-      const counterSnap = await transaction.get(counterRef);
-
-      let count = 0;
-      if (counterSnap.exists) {
-        count = counterSnap.data().count || 0;
-      }
-
-      let matches = true;
-
-      // ✅ messageType filter BEFORE increment
-      if (conditions.messageType) {
-        if (type !== conditions.messageType) {
-          matches = false;
-        }
-      }
-
-      // ✅ increment ONLY if matches
-      if (matches) {
-        count++;
-      }
-
-      counts[ruleId] = count;
+    if (statsSnap.exists) {
+      messageCount = statsSnap.data().messageCount || 0;
     }
 
-    // 🔥 PHASE 2: APPLY RULES + WRITE
-    for (const ruleDoc of rulesSnapshot.docs) {
-      const rule = ruleDoc.data();
-      const ruleId = ruleDoc.id;
-      const conditions = rule.conditions || {};
+    messageCount += 1;
 
-      const count = counts[ruleId];
+    transaction.set(statsRef, {
+      messageCount
+    }, { merge: true });
 
-      let shouldCreate = true;
+    // 🔥 SIMPLE MILESTONES
+    const milestones = [50, 100, 500, 1000, 2000, 5000];
 
-      // 🔹 messageType filter
-      if (conditions.messageType) {
-        if (type !== conditions.messageType) {
-          shouldCreate = false;
-        }
-      }
+    if (!milestones.includes(messageCount)) return;
 
-      // 🔹 interval
-      if (conditions.interval) {
-        if (count % conditions.interval !== 0) {
-          shouldCreate = false;
-        }
-      }
+    const eventId = `${convoId}_${messageCount}`;
 
-      // 🔹 occurrence
-      if (conditions.occurrence) {
-        if (count !== conditions.occurrence) {
-          shouldCreate = false;
-        }
-      }
+    const timelineRef = convoRef.collection("timeline").doc(eventId);
 
-      const counterRef = convoRef
-        .collection("rule_counters")
-        .doc(ruleId);
+    created = true;
 
-      // ✅ SAFE WRITE (after all reads)
-      transaction.set(counterRef, { count });
-
-      if (!shouldCreate) continue;
-
-      let title = rule.title || "";
-      let eventContent = rule.content || content;
-
-      title = title.replace("{index}", count);
-      eventContent = eventContent.replace("{index}", count);
-
-      const eventId = `${messageId}_${ruleId}`;
-
-      const timelineRef = convoRef
-        .collection("timeline")
-        .doc(eventId);
-      
-      created = true;
-
-      transaction.set(timelineRef, {
-        id: eventId,
-        title,
-        content: eventContent,
-        type,
-        time: admin.firestore.FieldValue.serverTimestamp(),
-        index: count,
-      });
-    }
+    transaction.set(timelineRef, {
+      id: eventId,
+      title: "Milestone 🎯",
+      content: `Reached ${messageCount} messages`,
+      type,
+      time: admin.firestore.FieldValue.serverTimestamp(),
+      index: messageCount,
+      messageId,
+    });
   });
+
   if (created) {
     await db.collection("Conversations")
       .doc(convoId)
       .collection("messages")
       .doc(messageId)
-      .set({
-        inTimeline: true
-      },{merge:true});
+      .set({ inTimeline: true }, { merge: true });
   }
 }
 
