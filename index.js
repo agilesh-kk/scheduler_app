@@ -188,7 +188,7 @@ async function processTimelineEvent(message) {
   const convoId = [senderId, receiverId].sort().join("_");
   const convoRef = db.collection("Conversations").doc(convoId);
 
-  const statsRef = convoRef.collection("meta").doc("stats");
+  const statsRef = convoRef.collection("rule_counters").doc("counters");
 
   let created = false;
 
@@ -198,7 +198,7 @@ async function processTimelineEvent(message) {
     let messageCount = 0;
 
     if (statsSnap.exists) {
-      messageCount = statsSnap.data().messageCount || 0;
+      messageCount = statsSnap.data().totalMessages || 0;
     }
 
     messageCount += 1;
