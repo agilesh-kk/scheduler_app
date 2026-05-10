@@ -40,7 +40,7 @@ async function addRow(messageData) {
           name: messageData.name || "unknown",
           sender_Id: messageData.senderId,
           receiver_Id: messageData.receiverId,
-          chat_Id: messageData.convoId,
+          chat_id: messageData.convoId,
           text:
             messageData.type === "text"
               ? messageData.content
