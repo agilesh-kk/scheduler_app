@@ -32,7 +32,7 @@ app.listen(PORT, () => {
 console.log("🚀 Scheduler starting...");
 
 async function addRow(data) {
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('messages')   // your table name
     .insert([
       {
