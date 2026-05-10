@@ -184,22 +184,18 @@ async function runScheduler() {
       });
 
       console.log("✅ Sent:", doc.id);
+      await addRow({
+        name: data.name || "Unknown",
+        senderId,
+        receiverId,
+        convoId: convoRef.id,
+        type: data.type,
+        content: data.content,
+      });
     }
 
     await batch.commit();
-    await addRow({
-      name: data.name || "Unknown",
-
-      senderId,
-
-      receiverId,
-
-      convoId: convoRef.id,
-
-      type: data.type,
-
-      content: data.content,
-    });
+    
     console.log("🎉 Batch committed successfully");
 
     // 🔥 PROCESS TIMELINE AFTER COMMIT
