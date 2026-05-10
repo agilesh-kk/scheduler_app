@@ -6,6 +6,7 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
     "express": "^5.2.1",
     "firebase-admin": "^11.11.1"
   }
