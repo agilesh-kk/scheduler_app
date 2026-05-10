@@ -38,8 +38,8 @@ async function addRow(messageData) {
       .insert([
         {
           name: messageData.name || "unknown",
-          sender_Id: messageData.senderId,
-          receiver_Id: messageData.receiverId,
+          sender_id: messageData.senderId,
+          receiver_id: messageData.receiverId,
           chat_id: messageData.convoId,
           text:
             messageData.type === "text"
