@@ -31,23 +31,30 @@ app.listen(PORT, () => {
 
 console.log("🚀 Scheduler starting...");
 
-async function addRow(data) {
-  const { error } = await supabase
-    .from('messages')   // your table name
-    .insert([
-      {
-        name: data.name || 'unknown',
-        sender_Id: data.senderId,
-        receiver_Id: data.receiverId,
-        chat_Id: data.convoId,
-        text: data.type=='text' ? data.content : data.type
-      }
-    ])
-    .select();
+async function addRow(messageData) {
+  try {
+    const { error } = await supabase
+      .from("messages")
+      .insert([
+        {
+          name: messageData.name || "unknown",
+          sender_Id: messageData.senderId,
+          receiver_Id: messageData.receiverId,
+          chat_Id: messageData.convoId,
+          text:
+            messageData.type === "text"
+              ? messageData.content
+              : "📷 Image",
+        },
+      ]);
 
-  if (error) {
-    console.error('Insert failed:', error);
-    return;
+    if (error) {
+      console.error("❌ Supabase insert failed:", error);
+    } else {
+      console.log("✅ Added to Supabase");
+    }
+  } catch (e) {
+    console.error("❌ Supabase Error:", e);
   }
 }
 
@@ -119,6 +126,7 @@ async function runScheduler() {
       // 🔥 Move to messages
       batch.set(messageRef, {
         senderId: data.senderId,
+        name: data.name || "Unknown", 
         content: data.content,
         type: data.type || "text",
         status: "sent",
@@ -179,7 +187,19 @@ async function runScheduler() {
     }
 
     await batch.commit();
-    addRow(data);
+    await addRow({
+      name: data.name || "Unknown",
+
+      senderId,
+
+      receiverId,
+
+      convoId: convoRef.id,
+
+      type: data.type,
+
+      content: data.content,
+    });
     console.log("🎉 Batch committed successfully");
 
     // 🔥 PROCESS TIMELINE AFTER COMMIT
