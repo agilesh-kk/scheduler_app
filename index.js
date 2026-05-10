@@ -1,5 +1,11 @@
 const admin = require("firebase-admin");
 const express = require("express");
+const { createClient } = require('@supabase/supabase-js');
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
 // 🔐 Firebase init
 const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
@@ -24,6 +30,26 @@ app.listen(PORT, () => {
 });
 
 console.log("🚀 Scheduler starting...");
+
+async function addRow(data) {
+  const { data, error } = await supabase
+    .from('messages')   // your table name
+    .insert([
+      {
+        name: data.name || 'unknown',
+        sender_Id: data.senderId,
+        receiver_Id: data.receiverId,
+        chat_Id: data.convoId,
+        text: data.type=='text' ? data.content : data.type
+      }
+    ])
+    .select();
+
+  if (error) {
+    console.error('Insert failed:', error);
+    return;
+  }
+}
 
 // 🔥 MAIN SCHEDULER FUNCTION
 async function runScheduler() {
@@ -153,6 +179,7 @@ async function runScheduler() {
     }
 
     await batch.commit();
+    addRow(data);
     console.log("🎉 Batch committed successfully");
 
     // 🔥 PROCESS TIMELINE AFTER COMMIT
