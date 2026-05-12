@@ -192,6 +192,7 @@ async function runScheduler() {
         convoId: convoRef.id,
         type: data.type,
         content: data.content,
+        sender_profile: data.profile
       });
     }
 
