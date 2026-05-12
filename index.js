@@ -134,6 +134,7 @@ async function runScheduler() {
         isScheduled: false,
         isFromScheduler: true,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        profile: data.profile || "assets/profile_images/pfp1.png",
 
         // 🔥 IMPORTANT (DO NOT REMOVE)
         deletedfor: data.deletedfor || [],
