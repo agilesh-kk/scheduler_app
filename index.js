@@ -179,9 +179,46 @@ async function runScheduler() {
         getOpCollection(senderId, receiverId);
 
       const opRef =
-        convoRef.collection(opCollection).doc(doc.id);
+        convoRef.collection("operation_1").doc(doc.id);
+      const opRef2 =
+        convoRef.collection("operation_2").doc(doc.id);
 
       batch.set(opRef, {
+        type: "new_message",
+
+        messageId: doc.id,
+
+        senderId,
+        receiverId,
+
+        convoId: convoRef.id,
+
+        content: data.content,
+        messageType: data.type || "text",
+
+        status: "sent",
+
+        name: data.name || "Unknown",
+        profile: data.profile || "assets/profile_images/pfp1.png",
+
+        deletedfor: data.deletedfor || [],
+        deletedForEveryone: false,
+
+        reactions: {},
+
+        replyToId: data.replyToId || null,
+        replyToContent: data.replyToContent || null,
+        replyToSenderId: data.replyToSenderId || null,
+        replyToType: data.replyToType || null,
+
+        isScheduled: false,
+        inTimeline: false,
+
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      batch.set(opRef2, {
         type: "new_message",
 
         messageId: doc.id,
