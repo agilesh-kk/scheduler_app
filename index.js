@@ -59,6 +59,14 @@ async function addRow(messageData) {
   }
 }
 
+function getOpCollection(senderId, receiverId) {
+  const sorted = [senderId, receiverId].sort();
+
+  return sorted[0] === senderId
+    ? "operation_1"
+    : "operation_2";
+}
+
 // 🔥 MAIN SCHEDULER FUNCTION
 async function runScheduler() {
   try {
@@ -80,6 +88,7 @@ async function runScheduler() {
 
     const batch = db.batch();
     const timelineQueue = [];
+    const convoCache = new Map();
 
     for (const doc of snapshot.docs) {
 
@@ -111,10 +120,20 @@ async function runScheduler() {
       // =====================================================
       // ✅ 3. NORMAL SEND FLOW
       // =====================================================
-      const convoSnap = await convoRef.get();
-      const convoData = convoSnap.data();
+      let convoData;
 
-      if (!convoData || !convoData.participantsId) continue;
+      if (convoCache.has(convoRef.id)) {
+        convoData = convoCache.get(convoRef.id);
+      } else {
+        const convoSnap = await convoRef.get();
+        convoData = convoSnap.data();
+
+        if (!convoData) continue;
+
+        convoCache.set(convoRef.id, convoData);
+      }
+
+      if (!convoData.participantsId) continue;
 
       const participants = convoData.participantsId;
       const senderId = data.senderId;
@@ -126,19 +145,74 @@ async function runScheduler() {
 
       // 🔥 Move to messages
       batch.set(messageRef, {
+        id: doc.id,
+
         senderId: data.senderId,
-        name: data.name || "Unknown", 
+        receiverId,
+        name: data.name || "Unknown",
         content: data.content,
         type: data.type || "text",
+
         status: "sent",
+
         isScheduled: false,
         isFromScheduler: true,
+
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+
         profile: data.profile || "assets/profile_images/pfp1.png",
 
-        // 🔥 IMPORTANT (DO NOT REMOVE)
         deletedfor: data.deletedfor || [],
         deletedForEveryone: data.deletedForEveryone || false,
+
+        replyToId: data.replyToId || null,
+        replyToContent: data.replyToContent || null,
+        replyToSenderId: data.replyToSenderId || null,
+        replyToType: data.replyToType || null,
+
+        reactions: data.reactions || {},
+        inTimeline: false,
+      });
+
+      const opCollection =
+        getOpCollection(senderId, receiverId);
+
+      const opRef =
+        convoRef.collection(opCollection).doc(doc.id);
+
+      batch.set(opRef, {
+        type: "new_message",
+
+        messageId: doc.id,
+
+        senderId,
+        receiverId,
+
+        convoId: convoRef.id,
+
+        content: data.content,
+        messageType: data.type || "text",
+
+        status: "sent",
+
+        name: data.name || "Unknown",
+        profile: data.profile || "assets/profile_images/pfp1.png",
+
+        deletedfor: data.deletedfor || [],
+        deletedForEveryone: false,
+
+        reactions: {},
+
+        replyToId: data.replyToId || null,
+        replyToContent: data.replyToContent || null,
+        replyToSenderId: data.replyToSenderId || null,
+        replyToType: data.replyToType || null,
+
+        isScheduled: false,
+        inTimeline: false,
+
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       // ❌ Remove scheduled
