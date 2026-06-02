@@ -240,8 +240,6 @@ async function runScheduler() {
               [`${senderId}.lastupdateTime`]: serverTime,
             }),
 
-        [`${senderId}.unread`]: 0,
-
         // 🔴 Receiver
         [`${receiverId}.lastMessage`]: content,
         [`${receiverId}.lastMessageId`]: doc.id,
