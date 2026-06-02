@@ -88,6 +88,7 @@ async function runScheduler() {
 
     const batch = db.batch();
     const timelineQueue = [];
+    const supabaseQueue = [];
     const convoCache = new Map();
 
     for (const doc of snapshot.docs) {
@@ -239,6 +240,8 @@ async function runScheduler() {
               [`${senderId}.lastSender`]: senderId,
               [`${senderId}.lastupdateTime`]: serverTime,
             }),
+          
+            [`${senderId}.unread`]: 0,
 
         // 🔴 Receiver
         [`${receiverId}.lastMessage`]: content,
@@ -258,20 +261,25 @@ async function runScheduler() {
       });
 
       console.log("✅ Sent:", doc.id);
-      await addRow({
+      supabaseQueue.push({
         name: data.name || "Unknown",
         senderId,
         receiverId,
         convoId: convoRef.id,
         type: data.type,
         content: data.content,
-        sender_profile: data.profile
+        sender_profile: data.profile || "assets/profile_images/pfp1.png"
       });
     }
 
     await batch.commit();
     
     console.log("🎉 Batch committed successfully");
+
+    // 🔥 INSERT TO SUPABASE AFTER COMMIT
+    await Promise.all(
+      supabaseQueue.map((item) => addRow(item))
+    );
 
     // 🔥 PROCESS TIMELINE AFTER COMMIT
     await Promise.all(
